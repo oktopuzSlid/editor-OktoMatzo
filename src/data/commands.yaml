@@ -1,0 +1,5 @@
+comandos:
+  - patron: "recorta al *"
+    accion: "recortar_objeto"
+    parametros: ["objeto"]
+    tipo: "imagen"

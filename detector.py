@@ -1,6 +1,6 @@
 
 from ultralytics import YOLO
-from config import MODEL_PATH, CONFIDENCE_THRESHOLD
+from modelo import MODEL_PATH, CONFIDENCE_THRESHOLD
 
 class YoloDetector:
     def __init__(self):

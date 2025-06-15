@@ -18,6 +18,6 @@ if exist requirements.txt (
 
 :: Ejecutar el programa principal
 echo Iniciando sistema...
-python main.py
+python primerpasoYolo.py
 
 pause

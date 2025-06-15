@@ -1,55 +1,11 @@
 import cv2
 import numpy as np
-from PIL import Image
-from ultralytics import YOLO
-from transformers import BlipProcessor, BlipForConditionalGeneration
 import multiprocessing as mp
-import time
+from MODELS.loadModels import get_yolo_model
+from ANALYZE.analyzeObjects import analyze_objects
 
-# Cargar modelos en el proceso principal
-model = YOLO("yolov8n-seg.pt")  # Modelo de segmentación
-
-def analyze_objects(frame, result_queue):
-    """Función para análisis en proceso separado"""
-    try:
-        # Cargar modelos BLIP dentro del proceso hijo
-        processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-        captioner = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
-        
-        # Convertir a RGB (YOLO espera RGB)
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # Detectar objetos
-        results = model(frame_rgb)[0]
-        boxes = results.boxes
-        
-        objects_info = []
-        for i, box in enumerate(boxes):
-            cls_id = int(box.cls[0])
-            class_name = model.names[cls_id]
-
-            # Recorte del objeto
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            obj_crop = frame[y1:y2, x1:x2]
-            if obj_crop.size == 0:
-                continue
-
-            # Descripción con BLIP
-            obj_pil = Image.fromarray(cv2.cvtColor(obj_crop, cv2.COLOR_BGR2RGB))
-            inputs = processor(obj_pil, return_tensors="pt")
-            out = captioner.generate(**inputs)
-            caption = processor.decode(out[0], skip_special_tokens=True)
-            
-            objects_info.append({
-                'class_name': class_name,
-                'caption': caption
-            })
-            
-        result_queue.put(objects_info)
-        
-    except Exception as e:
-        print(f"Error en análisis: {e}")
-        result_queue.put([])
+# Cargar modelo YOLO en el proceso principal
+model = get_yolo_model()
 
 def apply_effects(frame, object_effects):
     """Aplica los efectos configurados a los objetos detectados en el frame"""
@@ -63,7 +19,7 @@ def apply_effects(frame, object_effects):
     # Aplicar efectos a cada objeto detectado
     for i, box in enumerate(boxes):
         cls_id = int(box.cls[0])
-        class_name = model.names[cls_id]
+        class_name = model.model.names[cls_id]
         
         # Obtener máscara si existe
         if i < len(masks):
@@ -121,7 +77,7 @@ def main():
         processed_frame = apply_effects(frame, object_effects)
         
         # Mostrar estado de análisis
-        status = "Analizando..." if analysis_process else "Listo"
+        status = "Analizando..." if analysis_process and analysis_process.is_alive() else "Listo"
         cv2.putText(processed_frame, f"Estado: {status}", (10, 30), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
@@ -130,7 +86,7 @@ def main():
 
         # Manejar teclas
         if key == ord("d"):
-            if not analysis_process:  # Evitar múltiples análisis simultáneos
+            if analysis_process is None or not analysis_process.is_alive():
                 print("\n🔍 Iniciando análisis en segundo plano...")
                 analysis_process = mp.Process(
                     target=analyze_objects,
@@ -148,10 +104,10 @@ def main():
             analysis_process = None
             
             if objects_info:
-                print("\nAnálisis completado. Por favor responde las preguntas:")
+                print("\n✅ Análisis completado. Por favor responde las preguntas:")
                 
                 for obj_info in objects_info:
-                    print(f"\nObjeto: {obj_info['class_name']} — {obj_info['caption']}")
+                    print(f"\n📦 Objeto: {obj_info['class_name']} — {obj_info['caption']}")
                     
                     # Preguntar al usuario
                     action = input("¿Qué quieres hacer con todos los objetos de esta clase? (eliminar/color/resaltar/nada): ").strip().lower()
@@ -171,12 +127,12 @@ def main():
                         # Guardar por clase (sobrescribe si ya existía)
                         object_effects[obj_info['class_name']] = effect
             
-            print("\nEfectos aplicados. Mostrando video...")
+            print("\n🎨 Efectos aplicados. Mostrando video...")
 
     # Limpieza final
     cap.release()
     cv2.destroyAllWindows()
-    if analysis_process:
+    if analysis_process and analysis_process.is_alive():
         analysis_process.terminate()
 
 if __name__ == "__main__":

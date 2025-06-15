@@ -148,10 +148,10 @@ def main():
             analysis_process = None
             
             if objects_info:
-                print("\n✅ Análisis completado. Por favor responde las preguntas:")
+                print("\nAnálisis completado. Por favor responde las preguntas:")
                 
                 for obj_info in objects_info:
-                    print(f"\n📦 Objeto: {obj_info['class_name']} — {obj_info['caption']}")
+                    print(f"\nObjeto: {obj_info['class_name']} — {obj_info['caption']}")
                     
                     # Preguntar al usuario
                     action = input("¿Qué quieres hacer con todos los objetos de esta clase? (eliminar/color/resaltar/nada): ").strip().lower()
@@ -171,7 +171,7 @@ def main():
                         # Guardar por clase (sobrescribe si ya existía)
                         object_effects[obj_info['class_name']] = effect
             
-            print("\n🎨 Efectos aplicados. Mostrando video...")
+            print("\nEfectos aplicados. Mostrando video...")
 
     # Limpieza final
     cap.release()

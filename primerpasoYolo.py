@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import time
 import multiprocessing as mp
 from MODELS.loadModels import get_yolo_model
 from ANALYZE.analyzeObjects import analyze_objects
@@ -51,91 +52,98 @@ def apply_effects(frame, object_effects):
     
     return processed_frame
 
-def main():
-    # Iniciar cámara
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        print("Error al abrir la cámara")
-        return
-
-    # Variables para multiprocesamiento
-    result_queue = mp.Queue()
-    analysis_process = None
-    
-    # Efectos guardados por clase: {class_name: effect_dict}
-    object_effects = {}
-    
-    print("Presiona 'd' para analizar el frame y aplicar efectos.")
-    print("Presiona 'q' para salir.")
-
+def rtsp_stream_reader(rtsp_url, queue):
+    """Hilo dedicado para lectura RTSP robusta"""
+    cap = cv2.VideoCapture(rtsp_url)
     while True:
         ret, frame = cap.read()
         if not ret:
-            break
+            print("Reconectando...")  # Reconexión automática
+            cap.release()
+            time.sleep(2)
+            cap = cv2.VideoCapture(rtsp_url)
+            continue
+        queue.put(frame)  # Comparte frames con el hilo principal
 
-        # Aplicar efectos a los objetos detectados en este frame
-        processed_frame = apply_effects(frame, object_effects)
-        
-        # Mostrar estado de análisis
-        status = "Analizando..." if analysis_process and analysis_process.is_alive() else "Listo"
-        cv2.putText(processed_frame, f"Estado: {status}", (10, 30), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        
-        cv2.imshow("Cámara en tiempo real", processed_frame)
-        key = cv2.waitKey(1) & 0xFF
+def main():
+    # Configuración RTSP
+    RTSP_URL = 'rtsp://192.168.193.112:8554/camara1'
+    
+    # Cola para compartir frames entre hilos
+    frame_queue = mp.Queue(maxsize=1)
+    
+    # Iniciar hilo para lectura RTSP
+    rtsp_thread = threading.Thread(
+        target=rtsp_stream_reader,
+        args=(RTSP_URL, frame_queue),
+        daemon=True
+    )
+    rtsp_thread.start()
+    
+    # Esperar primer frame
+    while frame_queue.empty():
+        time.sleep(0.1)
+    
+    # Variables para procesamiento
+    result_queue = mp.Queue()
+    analysis_process = None
+    object_effects = {}
+    
+    print("Control: 'd' para analizar, 'q' para salir")
 
-        # Manejar teclas
-        if key == ord("d"):
-            if analysis_process is None or not analysis_process.is_alive():
-                print("\n🔍 Iniciando análisis en segundo plano...")
+    while True:
+        # Obtener frame más reciente
+        if not frame_queue.empty():
+            frame = frame_queue.get_nowait()
+            
+            # Procesar frame
+            processed_frame = apply_effects(frame, object_effects)
+            
+            # Mostrar estado
+            status = "Analizando..." if analysis_process and analysis_process.is_alive() else "Listo"
+            cv2.putText(processed_frame, f"Estado: {status}", (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            
+            # Mostrar video
+            cv2.imshow("Cámara IP - Detección YOLO", processed_frame)
+            
+            # Manejo de teclas
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("d") and (analysis_process is None or not analysis_process.is_alive()):
+                print("\n🔍 Iniciando análisis...")
                 analysis_process = mp.Process(
                     target=analyze_objects,
                     args=(frame.copy(), result_queue)
                 )
                 analysis_process.start()
-                
-        elif key == ord("q"):
-            break
-
-        # Comprobar si el análisis ha terminado
-        if analysis_process and not result_queue.empty():
-            objects_info = result_queue.get()
-            analysis_process.join()
-            analysis_process = None
+            elif key == ord("q"):
+                break
             
-            if objects_info:
-                print("\n✅ Análisis completado. Por favor responde las preguntas:")
-                
-                for obj_info in objects_info:
-                    print(f"\n📦 Objeto: {obj_info['class_name']} — {obj_info['caption']}")
-                    
-                    # Preguntar al usuario
-                    action = input("¿Qué quieres hacer con todos los objetos de esta clase? (eliminar/color/resaltar/nada): ").strip().lower()
-                    
-                    if action in ["eliminar", "color", "resaltar"]:
-                        effect = {'action': action}
-                        
-                        if action == "color":
-                            color_input = input("Color (R,G,B ej: 0,255,0): ").strip()
-                            try:
-                                r, g, b = map(int, color_input.split(","))
-                                effect['color'] = (b, g, r)  # OpenCV: BGR
-                            except:
-                                print("Color inválido. Usando verde.")
-                                effect['color'] = (0, 255, 0)
-                        
-                        # Guardar por clase (sobrescribe si ya existía)
-                        object_effects[obj_info['class_name']] = effect
-            
-            print("\n🎨 Efectos aplicados. Mostrando video...")
-
-    # Limpieza final
-    cap.release()
-    cv2.destroyAllWindows()
+            # Manejar resultados (mantener tu lógica existente)
+            if analysis_process and not result_queue.empty():cv2.destroyAllWindows()
     if analysis_process and analysis_process.is_alive():
         analysis_process.terminate()
+                # ... (tu código existente para manejar resultados) ...
+
+    # Limpieza
+    
+
+from http.server import SimpleHTTPRequestHandler, HTTPServer
+import threading
+
+def run_http_server():
+    port = 8000
+    handler = SimpleHTTPRequestHandler
+    httpd = HTTPServer(('', port), handler)
+    print(f"Servidor HTTP en http://localhost:{port}")
+    httpd.serve_forever()
 
 if __name__ == "__main__":
+    # Iniciar servidor HTTP en un hilo separado
+    http_thread = threading.Thread(target=run_http_server)
+    http_thread.daemon = True
+    http_thread.start()
+    
     # Solución para Windows (evitar errores de multiprocesamiento)
     mp.freeze_support()
     main()

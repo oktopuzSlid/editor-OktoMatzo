@@ -12,7 +12,7 @@
             background-color: #f5f5f5;
         }
         .container {
-            max-width: 1200px;
+            max-width: 800px;
             margin: 0 auto;
             background: white;
             padding: 20px;
@@ -28,11 +28,9 @@
             width: 100%;
             margin-bottom: 20px;
         }
-        #videoFeed {
+        #videoStream {
             width: 100%;
-            max-width: 800px;
             display: block;
-            margin: 0 auto;
             border: 2px solid #ddd;
             border-radius: 4px;
         }
@@ -41,7 +39,6 @@
             justify-content: center;
             gap: 10px;
             margin-bottom: 20px;
-            flex-wrap: wrap;
         }
         button {
             padding: 10px 15px;
@@ -55,53 +52,10 @@
         button:hover {
             background-color: #45a049;
         }
-        button:disabled {
-            background-color: #cccccc;
-            cursor: not-allowed;
-        }
         .status {
             text-align: center;
             margin: 10px 0;
             font-weight: bold;
-        }
-        .results {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f9f9f9;
-            border-radius: 4px;
-            border: 1px solid #ddd;
-        }
-        .object-item {
-            margin-bottom: 15px;
-            padding: 10px;
-            background-color: white;
-            border-radius: 4px;
-            border: 1px solid #eee;
-        }
-        .effect-controls {
-            margin-top: 10px;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-        .color-picker {
-            display: none;
-            align-items: center;
-            gap: 5px;
-        }
-        .upload-container {
-            margin-top: 20px;
-            text-align: center;
-        }
-        #fileInput {
-            display: none;
-        }
-        .upload-btn {
-            background-color: #2196F3;
-        }
-        .upload-btn:hover {
-            background-color: #0b7dda;
         }
     </style>
 </head>
@@ -110,173 +64,50 @@
         <h1>Visualizador YOLO en Tiempo Real</h1>
         
         <div class="video-container">
-            <img id="videoFeed" src="{{ url_for('video_feed') }}" alt="Video en tiempo real">
+            <img id="videoStream" src="http://localhost:5000/video_feed" alt="Video en tiempo real">
         </div>
         
-        <div class="status" id="status">Estado: Listo</div>
+        <div class="status" id="status">Estado: Conectando...</div>
         
         <div class="controls">
             <button id="analyzeBtn">Analizar Frame</button>
-            <button class="upload-btn" onclick="document.getElementById('fileInput').click()">Subir Archivo</button>
-            <input type="file" id="fileInput" accept="image/*,video/*">
-        </div>
-        
-        <div class="upload-container">
-            <p>Sube una imagen o video para procesar con YOLO</p>
-        </div>
-        
-        <div class="results" id="results" style="display: none;">
-            <h2>Resultados del Análisis</h2>
-            <div id="objectsList"></div>
+            <button id="uploadBtn">Subir Archivo</button>
         </div>
     </div>
 
     <script>
         const analyzeBtn = document.getElementById('analyzeBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
         const statusElement = document.getElementById('status');
-        const resultsElement = document.getElementById('results');
-        const objectsList = document.getElementById('objectsList');
-        const fileInput = document.getElementById('fileInput');
         
-        let checkingAnalysis = false;
+        // Simular conexión con el backend Python
+        statusElement.textContent = "Estado: Conectado";
         
         analyzeBtn.addEventListener('click', () => {
-            analyzeBtn.disabled = true;
-            statusElement.textContent = "Estado: Analizando...";
-            
-            fetch('/analyze', {
+            fetch('http://localhost:5000/analyze', {
                 method: 'POST'
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'started') {
-                    startCheckingAnalysis();
+            .then(response => {
+                if (response.ok) {
+                    statusElement.textContent = "Estado: Analizando frame...";
+                    analyzeBtn.disabled = true;
+                    
+                    // Simular espera de análisis
+                    setTimeout(() => {
+                        statusElement.textContent = "Estado: Análisis completado";
+                        analyzeBtn.disabled = false;
+                        alert("Análisis completado. Ver consola Python para interactuar.");
+                    }, 2000);
                 }
+            })
+            .catch(error => {
+                statusElement.textContent = "Estado: Error de conexión";
+                console.error("Error:", error);
             });
         });
         
-        function startCheckingAnalysis() {
-            if (checkingAnalysis) return;
-            checkingAnalysis = true;
-            
-            const checkInterval = setInterval(() => {
-                fetch('/get_analysis')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'ready') {
-                        clearInterval(checkInterval);
-                        checkingAnalysis = false;
-                        analyzeBtn.disabled = false;
-                        statusElement.textContent = "Estado: Análisis completado";
-                        displayResults(data.data);
-                    } else if (data.status === 'pending') {
-                        statusElement.textContent = "Estado: Analizando...";
-                    }
-                });
-            }, 1000);
-        }
-        
-        function displayResults(objects) {
-            resultsElement.style.display = 'block';
-            objectsList.innerHTML = '';
-            
-            objects.forEach(obj => {
-                const item = document.createElement('div');
-                item.className = 'object-item';
-                item.innerHTML = `
-                    <h3>${obj.class_name}</h3>
-                    <p>${obj.caption}</p>
-                    <div class="effect-controls">
-                        <select class="effect-select" data-class="${obj.class_name}">
-                            <option value="nada">No hacer nada</option>
-                            <option value="eliminar">Eliminar</option>
-                            <option value="color">Cambiar color</option>
-                            <option value="resaltar">Resaltar contorno</option>
-                        </select>
-                        <div class="color-picker" id="color-${obj.class_name}">
-                            <label>Color (RGB):</label>
-                            <input type="number" min="0" max="255" value="0" class="color-r">,
-                            <input type="number" min="0" max="255" value="255" class="color-g">,
-                            <input type="number" min="0" max="255" value="0" class="color-b">
-                        </div>
-                        <button class="apply-btn" data-class="${obj.class_name}">Aplicar</button>
-                    </div>
-                `;
-                objectsList.appendChild(item);
-                
-                // Configurar eventos para este objeto
-                const select = item.querySelector('.effect-select');
-                const colorPicker = item.querySelector('.color-picker');
-                const applyBtn = item.querySelector('.apply-btn');
-                
-                select.addEventListener('change', () => {
-                    if (select.value === 'color') {
-                        colorPicker.style.display = 'flex';
-                    } else {
-                        colorPicker.style.display = 'none';
-                    }
-                });
-                
-                applyBtn.addEventListener('click', () => {
-                    const action = select.value;
-                    const class_name = applyBtn.dataset.class;
-                    
-                    if (action === 'nada') {
-                        return;
-                    }
-                    
-                    let color = [0, 255, 0]; // Verde por defecto
-                    if (action === 'color') {
-                        const r = parseInt(item.querySelector('.color-r').value);
-                        const g = parseInt(item.querySelector('.color-g').value);
-                        const b = parseInt(item.querySelector('.color-b').value);
-                        color = [r, g, b];
-                    }
-                    
-                    fetch('/apply_effect', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                            class_name: class_name,
-                            action: action,
-                            color: color
-                        })
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.status === 'success') {
-                            alert(`Efecto "${action}" aplicado a ${class_name}`);
-                        }
-                    });
-                });
-            });
-        }
-        
-        fileInput.addEventListener('change', () => {
-            if (fileInput.files.length > 0) {
-                const file = fileInput.files[0];
-                const formData = new FormData();
-                formData.append('file', file);
-                
-                statusElement.textContent = "Estado: Subiendo y procesando archivo...";
-                
-                fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        statusElement.textContent = "Estado: Archivo procesado con éxito";
-                        alert(`Archivo ${data.filename} subido correctamente.`);
-                    } else {
-                        statusElement.textContent = "Estado: Error al procesar archivo";
-                        alert('Error al subir el archivo.');
-                    }
-                });
-            }
+        uploadBtn.addEventListener('click', () => {
+            alert("Esta función requeriría modificar el backend para manejar archivos.\nActualmente, usa la interfaz de consola para cargar archivos.");
         });
     </script>
 </body>

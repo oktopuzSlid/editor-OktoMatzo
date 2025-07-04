@@ -64,7 +64,7 @@
         <h1>Visualizador YOLO en Tiempo Real</h1>
         
         <div class="video-container">
-            <img id="videoStream" src="http://localhost:5000/video_feed" alt="Video en tiempo real">
+            <img id="videoStream" src="rtsp://192.168.195.112:8554/camara1" alt="Video en tiempo real">
         </div>
         
         <div class="status" id="status">Estado: Conectando...</div>
@@ -82,7 +82,7 @@
         const statusElement = document.getElementById('status');
 
         function setRTSP() {
-            const url = prompt("URL RTSP:", "rtsp://192.168.193.112:8554/camara1");
+            const url = prompt("URL RTSP:", "rtsp://192.168.195.112:8554/camara1");
             fetch('/set_rtsp', {
                 method: 'POST',
                 body: JSON.stringify({url: url})

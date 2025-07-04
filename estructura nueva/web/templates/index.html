@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador YOLO</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        #videoStream {
+            width: 100%;
+            display: block;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .status {
+            text-align: center;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Visualizador YOLO en Tiempo Real</h1>
+        
+        <div class="video-container">
+            <img id="videoStream" src="http://localhost:5000/video_feed" alt="Video en tiempo real">
+        </div>
+        
+        <div class="status" id="status">Estado: Conectando...</div>
+        
+        <div class="controls">
+            <button id="analyzeBtn">Analizar Frame</button>
+            <button id="uploadBtn">Subir Archivo</button>
+        </div>
+    </div>
+
+
+    <script>
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const statusElement = document.getElementById('status');
+
+        function setRTSP() {
+            const url = prompt("URL RTSP:", "rtsp://192.168.195.112:8554/camara1");
+            fetch('/set_rtsp', {
+                method: 'POST',
+                body: JSON.stringify({url: url})
+            });
+        }
+        
+        // Monitorización activa
+        function checkStatus() {
+            fetch('/status').then(response => {
+                document.getElementById("status").textContent = `Cámara: ${response.status}`;
+            });
+            setTimeout(checkStatus, 3000); 
+        }
+        // Simular conexión con el backend Python
+        statusElement.textContent = "Estado: Conectado";
+        
+        analyzeBtn.addEventListener('click', () => {
+            fetch('http://localhost:5000/analyze', {
+                method: 'POST'
+            })
+            .then(response => {
+                if (response.ok) {
+                    statusElement.textContent = "Estado: Analizando frame...";
+                    analyzeBtn.disabled = true;
+                    
+                    // Simular espera de análisis
+                    setTimeout(() => {
+                        statusElement.textContent = "Estado: Análisis completado";
+                        analyzeBtn.disabled = false;
+                        alert("Análisis completado. Ver consola Python para interactuar.");
+                    }, 2000);
+                }
+            })
+            .catch(error => {
+                statusElement.textContent = "Estado: Error de conexión";
+                console.error("Error:", error);
+            });
+        });
+        
+        uploadBtn.addEventListener('click', () => {
+            alert("Esta función requeriría modificar el backend para manejar archivos.\nActualmente, usa la interfaz de consola para cargar archivos.");
+        });
+    </script>
+    
+</body>
+</html>

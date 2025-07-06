@@ -3,13 +3,18 @@ Módulo principal del editor de video con YOLO.
 Coordina todos los componentes del sistema.
 """
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent))
+
+from app.video_editor import VideoEditor
+from app.camera_manager import RTSPStreamReader
+
 import multiprocessing as mp
 import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
 from config.settings import RTSP_URL
-from app.camera_manager import RTSPStreamReader
-from app.video_editor import VideoEditor
 from web.server import start_web_server
 
 def main():

@@ -5,7 +5,7 @@ Integra YOLO para detección de objetos y aplicación de efectos.
 import cv2
 import numpy as np
 import multiprocessing as mp
-from .models.yolo.loader import get_yolo_model
+from models.yolo.loader import get_yolo_model
 from analysis.object_analyzer import analyze_objects
 
 class VideoEditor:

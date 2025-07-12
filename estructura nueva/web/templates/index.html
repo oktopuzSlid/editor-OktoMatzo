@@ -3,129 +3,223 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador YOLO</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #333;
-            text-align: center;
-        }
-        .video-container {
-            position: relative;
-            width: 100%;
-            margin-bottom: 20px;
-        }
-        #videoStream {
-            width: 100%;
-            display: block;
-            border: 2px solid #ddd;
-            border-radius: 4px;
-        }
-        .controls {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-        button {
-            padding: 10px 15px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        .status {
-            text-align: center;
-            margin: 10px 0;
-            font-weight: bold;
-        }
-    </style>
+    <title>Editor de Video con YOLO</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
     <div class="container">
-        <h1>Visualizador YOLO en Tiempo Real</h1>
-        
+        <header>
+            <h1>Editor de Video Inteligente</h1>
+            <p class="subtitle">Detección de objetos en tiempo real con YOLO</p>
+        </header>
+
         <div class="video-container">
-            <img id="videoStream" src="http://localhost:5000/video_feed" alt="Video en tiempo real">
+            <img id="video-feed" src="{{ url_for('video_feed') }}" alt="Video en tiempo real">
+            <div class="controls">
+                <button id="analyze-btn" class="btn primary">Analizar Frame</button>
+                <div class="status-indicator">
+                    <span id="status">Conectado</span>
+                    <span class="fps">FPS: <span id="fps-counter">0</span></span>
+                </div>
+            </div>
         </div>
-        
-        <div class="status" id="status">Estado: Conectando...</div>
-        
-        <div class="controls">
-            <button id="analyzeBtn">Analizar Frame</button>
-            <button id="uploadBtn">Subir Archivo</button>
+
+        <div class="results-section">
+            <h2>Resultados del Análisis</h2>
+            <div id="detected-objects" class="objects-grid">
+                <p class="empty-message">Presiona "Analizar Frame" para detectar objetos</p>
+            </div>
+            
+            <div class="effect-controls">
+                <h3>Configurar Efectos</h3>
+                <div id="effect-params" class="hidden">
+                    <div class="form-group">
+                        <label for="effect-type">Tipo de Efecto:</label>
+                        <select id="effect-type" class="form-control">
+                            <option value="none">Ninguno</option>
+                            <option value="remove">Eliminar Objeto</option>
+                            <option value="highlight">Resaltar Contorno</option>
+                            <option value="color">Cambiar Color</option>
+                        </select>
+                    </div>
+                    
+                    <div id="color-control" class="form-group hidden">
+                        <label for="color-picker">Color:</label>
+                        <input type="color" id="color-picker" value="#00ff00">
+                    </div>
+                    
+                    <button id="apply-effect" class="btn secondary">Aplicar Efecto</button>
+                </div>
+            </div>
         </div>
     </div>
 
-
     <script>
-        const analyzeBtn = document.getElementById('analyzeBtn');
-        const uploadBtn = document.getElementById('uploadBtn');
-        const statusElement = document.getElementById('status');
-
-        function setRTSP() {
-            const url = prompt("URL RTSP:", "rtsp://192.168.195.112:8554/camara1");
-            fetch('/set_rtsp', {
-                method: 'POST',
-                body: JSON.stringify({url: url})
-            });
-        }
+        // Variables globales
+        let selectedClass = null;
+        let lastFrameTime = 0;
+        let fps = 0;
         
-        // Monitorización activa
-        function checkStatus() {
-            fetch('/status').then(response => {
-                document.getElementById("status").textContent = `Cámara: ${response.status}`;
-            });
-            setTimeout(checkStatus, 3000); 
-        }
-        // Simular conexión con el backend Python
-        statusElement.textContent = "Estado: Conectado";
+        // Elementos del DOM
+        const analyzeBtn = document.getElementById('analyze-btn');
+        const videoFeed = document.getElementById('video-feed');
+        const detectedObjectsDiv = document.getElementById('detected-objects');
+        const effectParamsDiv = document.getElementById('effect-params');
+        const effectTypeSelect = document.getElementById('effect-type');
+        const colorControl = document.getElementById('color-control');
+        const applyEffectBtn = document.getElementById('apply-effect');
+        const colorPicker = document.getElementById('color-picker');
+        const fpsCounter = document.getElementById('fps-counter');
+        const statusIndicator = document.getElementById('status');
         
-        analyzeBtn.addEventListener('click', () => {
-            fetch('http://localhost:5000/analyze', {
-                method: 'POST'
-            })
-            .then(response => {
-                if (response.ok) {
-                    statusElement.textContent = "Estado: Analizando frame...";
-                    analyzeBtn.disabled = true;
-                    
-                    // Simular espera de análisis
-                    setTimeout(() => {
-                        statusElement.textContent = "Estado: Análisis completado";
-                        analyzeBtn.disabled = false;
-                        alert("Análisis completado. Ver consola Python para interactuar.");
-                    }, 2000);
+        // Configurar eventos
+        analyzeBtn.addEventListener('click', analyzeCurrentFrame);
+        effectTypeSelect.addEventListener('change', toggleColorPicker);
+        applyEffectBtn.addEventListener('click', applySelectedEffect);
+        
+        // Calcular FPS
+        videoFeed.addEventListener('load', updateFPS);
+        
+        // Funciones principales
+        async function analyzeCurrentFrame() {
+            analyzeBtn.disabled = true;
+            analyzeBtn.textContent = "Analizando...";
+            statusIndicator.textContent = "Analizando frame...";
+            
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
                 }
-            })
-            .catch(error => {
-                statusElement.textContent = "Estado: Error de conexión";
-                console.error("Error:", error);
-            });
-        });
+                
+                const results = await response.json();
+                displayDetectionResults(results);
+                
+            } catch (error) {
+                console.error("Error al analizar:", error);
+                statusIndicator.textContent = "Error en análisis";
+                showAlert("Error al analizar el frame. Intenta nuevamente.");
+            } finally {
+                analyzeBtn.disabled = false;
+                analyzeBtn.textContent = "Analizar Frame";
+                setTimeout(() => statusIndicator.textContent = "Conectado", 3000);
+            }
+        }
         
-        uploadBtn.addEventListener('click', () => {
-            alert("Esta función requeriría modificar el backend para manejar archivos.\nActualmente, usa la interfaz de consola para cargar archivos.");
-        });
+        function displayDetectionResults(objects) {
+            detectedObjectsDiv.innerHTML = '';
+            
+            if (!objects || objects.length === 0) {
+                detectedObjectsDiv.innerHTML = `
+                    <p class="empty-message">No se detectaron objetos</p>
+                `;
+                return;
+            }
+            
+            objects.forEach(obj => {
+                const objectCard = document.createElement('div');
+                objectCard.className = 'object-card';
+                objectCard.innerHTML = `
+                    <h4>${obj.class_name}</h4>
+                    <p>Confianza: ${Math.round(obj.confidence * 100)}%</p>
+                `;
+                
+                objectCard.addEventListener('click', () => {
+                    selectedClass = obj.class_name;
+                    effectParamsDiv.classList.remove('hidden');
+                    document.querySelectorAll('.object-card').forEach(card => {
+                        card.classList.remove('selected');
+                    });
+                    objectCard.classList.add('selected');
+                });
+                
+                detectedObjectsDiv.appendChild(objectCard);
+            });
+        }
+        
+        function toggleColorPicker() {
+            if (effectTypeSelect.value === 'color') {
+                colorControl.classList.remove('hidden');
+            } else {
+                colorControl.classList.add('hidden');
+            }
+        }
+        
+        async function applySelectedEffect() {
+            if (!selectedClass) {
+                showAlert("Selecciona un objeto primero");
+                return;
+            }
+            
+            const effectType = effectTypeSelect.value;
+            let color = [0, 255, 0]; // Verde por defecto
+            
+            if (effectType === 'color') {
+                const hexColor = colorPicker.value;
+                color = [
+                    parseInt(hexColor.substr(1, 2), 16), // R
+                    parseInt(hexColor.substr(3, 2), 16), // G
+                    parseInt(hexColor.substr(5, 2), 16)  // B
+                ];
+            }
+            
+            applyEffectBtn.disabled = true;
+            applyEffectBtn.textContent = "Aplicando...";
+            
+            try {
+                const response = await fetch('/update_effect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        class_name: selectedClass,
+                        effect_type: effectType,
+                        color: color
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Error: ${response.status}`);
+                }
+                
+                showAlert(`Efecto aplicado a ${selectedClass}`);
+                
+            } catch (error) {
+                console.error("Error al aplicar efecto:", error);
+                showAlert("Error al aplicar el efecto");
+            } finally {
+                applyEffectBtn.disabled = false;
+                applyEffectBtn.textContent = "Aplicar Efecto";
+            }
+        }
+        
+        function updateFPS() {
+            const now = performance.now();
+            if (lastFrameTime > 0) {
+                fps = Math.round(1000 / (now - lastFrameTime));
+                fpsCounter.textContent = fps;
+            }
+            lastFrameTime = now;
+        }
+        
+        function showAlert(message) {
+            const alert = document.createElement('div');
+            alert.className = 'alert';
+            alert.textContent = message;
+            document.body.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.classList.add('fade-out');
+                setTimeout(() => alert.remove(), 500);
+            }, 3000);
+        }
     </script>
-    
 </body>
 </html>

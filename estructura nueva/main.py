@@ -7,26 +7,46 @@ import multiprocessing as mp
 import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 
-from config.settings import RTSP_URL
-from app.camera_manager import RTSPStreamReader
+from config.settings import VIDEO_SOURCES
+
 from app.video_editor import VideoEditor
 from web.server import start_web_server
 
 def main():
-    """Función principal que inicia todos los componentes del sistema."""
-    # Iniciar servidor web en hilo separado
-    web_thread = threading.Thread(
+    # Configuración para Windows
+    mp.freeze_support()
+    
+    # Iniciar servidor Flask en hilo separado
+    flask_thread = threading.Thread(
         target=start_web_server,
         daemon=True
     )
-    web_thread.start()
     
-    # Configuración de multiprocesamiento para Windows
-    mp.freeze_support()
+    flask_thread.start()
     
-    # Iniciar el editor de video
-    editor = VideoEditor(RTSP_URL)
-    editor.run()
+    # Crear editor de video
+    editor = VideoEditor()
+    
+    try:
+        # Configurar fuente predeterminada ANTES de ejecutar
+        success, message = editor.set_video_source(
+            source_type='webcam',
+            device_index=VIDEO_SOURCES['webcam']['device_index']
+        )
+        
+        if not success:
+            raise RuntimeError(f"No se pudo inicializar la fuente de video: {message}")
+        
+        # Ahora sí ejecutar
+        editor.run()
+        
+    except KeyboardInterrupt:
+        print("\nAplicación terminada por el usuario")
+    except Exception as e:
+        print(f"\nError crítico: {str(e)}")
+    finally:
+        editor.cleanup()
+        
 
 if __name__ == "__main__":
     main()

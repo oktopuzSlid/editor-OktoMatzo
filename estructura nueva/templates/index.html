@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sistema de Cámaras Inteligente</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .camera-panel { display: flex; gap: 20px; margin-bottom: 20px; }
+        .camera-section { flex: 1; border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
+        .camera-view { background: #000; height: 400px; display: flex; justify-content: center; align-items: center; }
+        .camera-view img, .camera-view video { max-width: 100%; max-height: 100%; }
+        .controls { margin: 15px 0; display: flex; gap: 10px; flex-wrap: wrap; }
+        button { padding: 8px 15px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:disabled { background: #cccccc; }
+        button.stop { background: #f44336; }
+        .results-panel { border: 1px solid #ddd; padding: 15px; border-radius: 8px; max-height: 400px; overflow-y: auto; }
+        .detection-item { margin: 10px 0; padding: 10px; border-bottom: 1px solid #eee; }
+        .detection-header { font-weight: bold; color: #333; }
+        .detection-class { display: inline-block; padding: 3px 8px; background: #e0f7fa; border-radius: 4px; margin: 2px; }
+        .status { padding: 5px; border-radius: 4px; margin-top: 10px; }
+        .status-success { background: #d4edda; color: #155724; }
+        .status-error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Sistema de Monitoreo Inteligente</h1>
+        
+        <div class="camera-panel">
+            <div class="camera-section">
+                <h2>Cámara del Dispositivo</h2>
+                <div class="controls">
+                    <button id="startLocalCam">Activar Cámara</button>
+                    <button id="stopLocalCam" class="stop hidden">Desactivar</button>
+                    <button id="analyzeLocal" class="hidden">Analizar Frame</button>
+                </div>
+                <div class="camera-view">
+                    <video id="localVideo" autoplay playsinline></video>
+                </div>
+            </div>
+            
+            <div class="camera-section">
+                <h2>Cámara IP</h2>
+                <div class="controls">
+                    <input type="text" id="ipCamUrl" placeholder="rtsp://usuario:contraseña@ip:puerto/ruta" size="40">
+                    <button id="startIpCam">Iniciar Transmisión</button>
+                    <button id="stopIpCam" class="stop hidden">Detener</button>
+                    <button id="analyzeIp" class="hidden">Analizar Frame</button>
+                </div>
+                <div class="camera-view">
+                    <img id="ipCamera" src="">
+                </div>
+                <div id="ipStatus" class="status"></div>
+            </div>
+        </div>
+        
+        <div class="results-panel">
+            <h2>Resultados de Detección</h2>
+            <div class="controls">
+                <button id="clearResults">Limpiar Resultados</button>
+            </div>
+            <div id="detectionResults"></div>
+        </div>
+    </div>
+
+    <script>
+        // Elementos DOM
+        const startLocalCamBtn = document.getElementById('startLocalCam');
+        const stopLocalCamBtn = document.getElementById('stopLocalCam');
+        const analyzeLocalBtn = document.getElementById('analyzeLocal');
+        const startIpCamBtn = document.getElementById('startIpCam');
+        const stopIpCamBtn = document.getElementById('stopIpCam');
+        const analyzeIpBtn = document.getElementById('analyzeIp');
+        const clearResultsBtn = document.getElementById('clearResults');
+        const localVideo = document.getElementById('localVideo');
+        const ipCamera = document.getElementById('ipCamera');
+        const ipCamUrlInput = document.getElementById('ipCamUrl');
+        const detectionResults = document.getElementById('detectionResults');
+        const ipStatus = document.getElementById('ipStatus');
+        
+        // Variables de estado
+        let localStream = null;
+        let ipStreamActive = false;
+        
+        // ===== CÁMARA LOCAL =====
+        startLocalCamBtn.addEventListener('click', async () => {
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' } 
+                });
+                localVideo.srcObject = localStream;
+                startLocalCamBtn.classList.add('hidden');
+                stopLocalCamBtn.classList.remove('hidden');
+                analyzeLocalBtn.classList.remove('hidden');
+            } catch (err) {
+                console.error("Error al acceder a la cámara:", err);
+                alert('No se pudo acceder a la cámara: ' + err.message);
+            }
+        });
+
+        stopLocalCamBtn.addEventListener('click', () => {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localVideo.srcObject = null;
+                startLocalCamBtn.classList.remove('hidden');
+                stopLocalCamBtn.classList.add('hidden');
+                analyzeLocalBtn.classList.add('hidden');
+            }
+        });
+
+        analyzeLocalBtn.addEventListener('click', async () => {
+            analyzeLocalBtn.disabled = true;
+            
+            // Capturar frame del video
+            const canvas = document.createElement('canvas');
+            canvas.width = localVideo.videoWidth;
+            canvas.height = localVideo.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(localVideo, 0, 0, canvas.width, canvas.height);
+            
+            // Convertir a Blob y enviar al servidor
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('image', blob, 'frame.jpg');
+                
+                try {
+                    const response = await fetch('/analyze_frame', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const result = await response.json();
+                    handleAnalysisResult(result, 'local');
+                } catch (err) {
+                    console.error("Error en análisis:", err);
+                    alert('Error al analizar el frame');
+                }
+                
+                analyzeLocalBtn.disabled = false;
+            }, 'image/jpeg');
+        });
+
+        // ===== CÁMARA IP =====
+        startIpCamBtn.addEventListener('click', async () => {
+            const url = ipCamUrlInput.value.trim();
+            
+            if (!url) {
+                showStatus('Ingrese la URL de la cámara', 'error');
+                return;
+            }
+            
+            try {
+                showStatus('Iniciando transmisión...', 'info');
+                
+                // Iniciar transmisión en el servidor
+                const response = await fetch('/start_stream', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `url=${encodeURIComponent(url)}`
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    startIpCamBtn.classList.add('hidden');
+                    stopIpCamBtn.classList.remove('hidden');
+                    analyzeIpBtn.classList.remove('hidden');
+                    ipStreamActive = true;
+                    
+                    // Iniciar visualización
+                    ipCamera.src = '/video_feed?t=' + Date.now();
+                    showStatus('Transmisión activa', 'success');
+                } else {
+                    const error = await response.json();
+                    showStatus(`Error: ${error.error || 'Error desconocido'}`, 'error');
+                }
+            } catch (err) {
+                console.error("Error al iniciar cámara IP:", err);
+                showStatus('Error de conexión con el servidor', 'error');
+            }
+        });
+
+        stopIpCamBtn.addEventListener('click', async () => {
+            try {
+                showStatus('Deteniendo transmisión...', 'info');
+                
+                const response = await fetch('/stop_stream', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    stopIpCamBtn.classList.add('hidden');
+                    startIpCamBtn.classList.remove('hidden');
+                    analyzeIpBtn.classList.add('hidden');
+                    ipStreamActive = false;
+                    ipCamera.src = "";
+                    showStatus('Transmisión detenida', 'success');
+                } else {
+                    const error = await response.json();
+                    showStatus(`Error: ${error.error || 'Error desconocido'}`, 'error');
+                }
+            } catch (err) {
+                console.error("Error al detener cámara IP:", err);
+                showStatus('Error de conexión con el servidor', 'error');
+            }
+        });
+
+        // Actualizar imagen IP periódicamente
+        function updateIpCamera() {
+            if (ipStreamActive) {
+                ipCamera.src = '/video_feed?t=' + Date.now();
+                setTimeout(updateIpCamera, 100); // Actualizar cada 100ms
+            }
+        }
+        
+        // Mostrar mensajes de estado
+        function showStatus(message, type) {
+            ipStatus.textContent = message;
+            ipStatus.className = 'status';
+            
+            if (type === 'success') {
+                ipStatus.classList.add('status-success');
+            } else if (type === 'error') {
+                ipStatus.classList.add('status-error');
+            } else {
+                ipStatus.classList.add('status-info');
+            }
+        }
+
+        analyzeIpBtn.addEventListener('click', async () => {
+            analyzeIpBtn.disabled = true;
+            
+            try {
+                const response = await fetch('/analyze_frame', {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                handleAnalysisResult(result, 'ip');
+            } catch (err) {
+                console.error("Error en análisis:", err);
+                alert('Error al analizar el frame');
+            }
+            
+            analyzeIpBtn.disabled = false;
+        });
+
+        // ===== MANEJO DE RESULTADOS =====
+        function handleAnalysisResult(result, source) {
+            if (result.status === "success") {
+                addDetectionToUI(result, source);
+            } else if (result.status === "skipped") {
+                alert(result.message);
+            } else {
+                alert("Error en análisis: " + (result.message || "Desconocido"));
+            }
+        }
+
+        function addDetectionToUI(result, source) {
+            const item = document.createElement('div');
+            item.className = 'detection-item';
+            
+            let detectionList = '';
+            if (result.detections && result.detections.length > 0) {
+                result.detections.forEach(det => {
+                    detectionList += `<span class="detection-class">${det.class} (${Math.round(det.confidence * 100)}%)</span>`;
+                });
+            } else {
+                detectionList = '<p>No se detectaron objetos</p>';
+            }
+            
+            item.innerHTML = `
+            <div class="detection-header">
+                ${source === 'local' ? 'Cámara Local' : 'Cámara IP'} - ${result.timestamp}
+            </div>
+            <div class="detection-content">
+                ${detectionList}
+            </div>
+            `;
+            
+            detectionResults.prepend(item);
+        }
+
+        // Limpiar resultados
+        clearResultsBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/clear_detections', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    detectionResults.innerHTML = '<p>No hay resultados de detección</p>';
+                }
+            } catch (err) {
+                console.error("Error al limpiar resultados:", err);
+            }
+        });
+        
+        // Iniciar actualización de cámara IP
+        updateIpCamera();
+    </script>
+</body>
+</html>

@@ -1,8 +1,3 @@
-"""
-Módulo principal del editor de video con YOLO.
-Coordina todos los componentes del sistema.
-"""
-
 import multiprocessing as mp
 import threading
 from http.server import SimpleHTTPRequestHandler, HTTPServer

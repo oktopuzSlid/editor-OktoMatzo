@@ -67,7 +67,7 @@ def rtsp_stream_reader(rtsp_url, queue):
 
 def main():
     # Configuración RTSP
-    RTSP_URL = 'rtsp://192.168.195.112:8554/camara1'
+    RTSP_URL = 'rtsp://192.168.1.72:8080/h264_ulaw.sdp'
     
     # Cola para compartir frames entre hilos
     frame_queue = mp.Queue(maxsize=1)
